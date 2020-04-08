@@ -359,7 +359,7 @@ class Parser(object):
 
 if __name__ == "__main__":
     arguments = argparse.ArgumentParser(description='Parses Zoom QOS Logs into a usable format')
-    arguments.add_argument('input_files', nargs='+', help='The script to run')
+    arguments.add_argument('input_files', nargs='+', help='QOS Logs provided by Zoom')
     arguments.add_argument('-o', '--output', help='Output directory', default='./')
     arguments.add_argument(
         '-d', '--debug',
@@ -398,10 +398,11 @@ if __name__ == "__main__":
                                                                                          Parser.DUMP_PARTICIPANTS_BY_PUBLIC_IP,
                                                                                          Parser.DUMP_PARTICIPANTS_BY_PRIVATE_IP,
                                                                                          Parser.DUMP_PARTICIPANTS_LIST,
-                                                                                         Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS])
+                                                                                         Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS],
+                           help='Runs all actions')
 
     arguments.set_defaults(loglevel=logging.INFO,
-                           actions=[Parser.PARSE_LOGS])
+                           actions=[Parser.PARSE_LOGS], )
 
     args = arguments.parse_args()
 
