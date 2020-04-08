@@ -19,6 +19,7 @@ class Parser(object):
     DUMP_PARTICIPANTS_BY_PRIVATE_IP = 0x04
     DUMP_PARTICIPANTS_LIST = 0x05
     DUMP_PARTICIPANTS_LIST_WITH_IPS = 0x06
+    DUMP_PARTICIPANTS_LIST_BY_LOCATION = 0x07
 
     def __init__(self, input_files=[], output_directory='./', actions=[PARSE_LOGS]):
         self.input_files = input_files
@@ -28,6 +29,7 @@ class Parser(object):
         self.private_ip_addresses = {}
         self.participants = {}
         self.meetings = {}
+        self.locations = {}
         self.session_logs = []
         self.events = []
 
@@ -63,6 +65,8 @@ class Parser(object):
                 self.dump_participants_list()
             elif action == Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS:
                 self.dump_participants_list_with_ips()
+            elif action == Parser.DUMP_PARTICIPANTS_LIST_BY_LOCATION:
+                self.dump_participants_list_by_location()
             logger.info('\r\n\r\n')
 
     def parse_input_files(self):
@@ -105,12 +109,35 @@ class Parser(object):
         logger.info('Participants List with IP Addresses:')
         for participant in self.participants:
             logger.info(f"\t{participant}")
+
             logger.info(f"\t\tPublic IP Addresses:")
             for public_ip in self.participants[participant]['public_ip_addresses']:
                 logger.info(f"\t\t\t{public_ip}")
+
             logger.info(f"\t\tPrivate IP Addresses:")
             for private_ip in self.participants[participant]['private_ip_addresses']:
                 logger.info(f"\t\t\t{private_ip}")
+
+            logger.info(f"\t\tLocations:")
+            for location in self.participants[participant]['locations']:
+                logger.info(f'\t\t\t{location}')
+
+    def dump_participants_list_by_location(self):
+        logger.info('Participants List by Location')
+        for location in self.locations:
+            logger.info(f'\t{location}')
+
+            logger.info(f"\t\tPublic IP Addresses:")
+            for public_ip in self.locations[location]['public_ip_addresses']:
+                logger.info(f'\t\t\t{public_ip}')
+
+            logger.info(f"\t\tPrivate IP Addresses:")
+            for private_ip in self.locations[location]['private_ip_addresses']:
+                logger.info(f'\t\t\t{private_ip}')
+
+            logger.info(f"\t\tParticipants:")
+            for participant in self.locations[location]['participants']:
+                logger.info(f'\t\t\t{participant}')
 
     def write_output_file(self):
         self.ensure_output_directory_exists()
@@ -182,19 +209,31 @@ class Parser(object):
                 log['ip_address'])
 
             # Extract the public IP address and add it to the public IP addresses dict
-            log['public_ip'] = ip_address_extraction.group('public_ip')
+            try:
+                log['public_ip'] = ip_address_extraction.group('public_ip')
+            except AttributeError:
+                log['public_ip'] = log['ip_address']
+
             self.public_ip_addresses.setdefault(log['public_ip'], {
                 'participants': set(),
                 'private_ip_addresses': set(),
+                'locations': set(),
             })
             # Add the seen participant to the public IP address dict
             self.public_ip_addresses[log['public_ip']]['participants'].add(log['participant'])
+            self.public_ip_addresses[log['public_ip']]['locations'].add(log['location'])
 
             # Extract the private IP address and add it to out private IP addresses dict
-            log['private_ip'] = ip_address_extraction.group('private_ip')
+            try:
+                log['private_ip'] = ip_address_extraction.group('private_ip')
+            except AttributeError:
+                log['private_ip'] = log['ip_address']
+
+
             self.private_ip_addresses.setdefault(log['private_ip'], {
                 'participants': set(),
                 'public_ip_addresses': set(),
+                'locations': set(),
             })
             # Add the seen participant to the private IP address dict
             self.private_ip_addresses[log['private_ip']]['participants'].add(log['participant'])
@@ -202,16 +241,29 @@ class Parser(object):
             # Add the public <-> private IP address mapping
             self.public_ip_addresses[log['public_ip']]['private_ip_addresses'].add(log['private_ip'])
             self.private_ip_addresses[log['private_ip']]['public_ip_addresses'].add(log['public_ip'])
+            self.private_ip_addresses[log['private_ip']]['locations'].add(log['location'])
 
             # Add the participant to the participants dict
             self.participants.setdefault(log['participant'], {
                 'private_ip_addresses': set(),
                 'public_ip_addresses': set(),
+                'locations': set(),
             })
 
             # Add any seen public or private IP addresses to the participant
             self.participants[log['participant']]['public_ip_addresses'].add(log['public_ip'])
             self.participants[log['participant']]['private_ip_addresses'].add(log['private_ip'])
+            self.participants[log['participant']]['locations'].add(log['location'])
+
+            self.locations.setdefault(log['location'], {
+                'public_ip_addresses': set(),
+                'private_ip_addresses': set(),
+                'participants': set(),
+            })
+
+            self.locations[log['location']]['public_ip_addresses'].add(log['public_ip'])
+            self.locations[log['location']]['private_ip_addresses'].add(log['private_ip'])
+            self.locations[log['location']]['participants'].add(log['participant'])
 
             log['session_key'] = str(uuid4())
 
@@ -245,12 +297,7 @@ class Parser(object):
         return meeting_information
 
     def read_input_file(self, data_file):
-        logs = csv.DictReader(codecs.EncodedFile(data_file, 'utf8', 'utf_8_sig'))
-        # logs = LogSorter.transform_keys(logs)
-        # logs = LogSorter.convert_field_to_timestamp(logs, 'join_time')
-        # logs = LogSorter.convert_field_to_timestamp(logs, 'leave_time')
-        # logs = LogSorter.add_session_key(logs)
-        return logs
+        return csv.DictReader(codecs.EncodedFile(data_file, 'utf8', 'utf_8_sig'))
 
     def get_input_file_contents(self, input_file):
         with codecs.EncodedFile(open(input_file, 'rb'), 'utf8', 'utf_8_sig') as fp:
@@ -391,6 +438,9 @@ if __name__ == "__main__":
     arguments.add_argument('--dump-participants-list-with-ips', dest='actions', action='append_const',
                            const=Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS,
                            help="Dumps the identified participants with the IP addresses they used")
+    arguments.add_argument('--dump-participants-list-location', dest='actions', action='append_const',
+                           const=Parser.DUMP_PARTICIPANTS_LIST_BY_LOCATION,
+                           help="Dumps the identified participants by Zoom identified location")
 
     arguments.add_argument('--all-actions', dest='actions', action='store_const', const=[Parser.PARSE_LOGS,
                                                                                          Parser.DUMP_PUBLIC_IPS,
@@ -398,7 +448,8 @@ if __name__ == "__main__":
                                                                                          Parser.DUMP_PARTICIPANTS_BY_PUBLIC_IP,
                                                                                          Parser.DUMP_PARTICIPANTS_BY_PRIVATE_IP,
                                                                                          Parser.DUMP_PARTICIPANTS_LIST,
-                                                                                         Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS],
+                                                                                         Parser.DUMP_PARTICIPANTS_LIST_WITH_IPS,
+                                                                                         Parser.DUMP_PARTICIPANTS_LIST_BY_LOCATION],
                            help='Runs all actions')
 
     arguments.set_defaults(loglevel=logging.INFO,
